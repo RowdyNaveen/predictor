@@ -39,6 +39,7 @@ if uploaded_file is not None:
     try:
         # Read CSV file into a DataFrame
         df = pd.read_csv(uploaded_file)
+        df["result"] = df["result"].replace({"Player A": "A", "Player B": "B"})
     except Exception as e:
         st.error(f"Error reading CSV file: {e}")
     else:
