@@ -1,21 +1,23 @@
 import streamlit as st
-import requests
-
-# -----------------------------
-# Helper Functions
-# -----------------------------
+import pandas as pd
 
 def update_transition_matrix(sequence):
-    """Calculate transition probabilities from the outcome sequence."""
+    """
+    Given a list of match outcomes (e.g., ['A', 'B', 'A', ...]),
+    compute the transition probabilities for a first-order Markov chain.
+    """
     counts = {'A': {'A': 0, 'B': 0}, 'B': {'A': 0, 'B': 0}}
+    # Count transitions between consecutive outcomes
     for i in range(1, len(sequence)):
         prev, curr = sequence[i - 1], sequence[i]
         counts[prev][curr] += 1
+    
+    # Convert counts to probabilities
     matrix = {}
     for state in counts:
         total = counts[state]['A'] + counts[state]['B']
         if total == 0:
-            matrix[state] = {'A': 0.5, 'B': 0.5}
+            matrix[state] = {'A': 0.5, 'B': 0.5}  # Default if no data
         else:
             matrix[state] = {
                 'A': counts[state]['A'] / total,
@@ -23,68 +25,48 @@ def update_transition_matrix(sequence):
             }
     return matrix
 
-def get_latest_result(url):
-    """
-    Fetch the latest game result from the given URL.
-    Adjust the data extraction logic based on the actual JSON structure.
-    """
+# -----------------------------
+# Streamlit App Interface
+# -----------------------------
+st.title("CSV-based Match Outcome Predictor")
+
+st.write("Upload a CSV file containing your match results. The file should have a column named `result` with values `A` or `B`.")
+
+# File uploader for CSV
+uploaded_file = st.file_uploader("Choose a CSV file", type=["csv"])
+
+if uploaded_file is not None:
     try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-        # Adjust this based on the JSON you receive.
-        outcome = data.get('result', None)
-        return outcome
+        # Read CSV file into a DataFrame
+        df = pd.read_csv(uploaded_file)
     except Exception as e:
-        st.error(f"Error fetching data: {e}")
-        return None
-
-# -----------------------------
-# Initialize Session State
-# -----------------------------
-if 'current_sequence' not in st.session_state:
-    st.session_state.current_sequence = []
-if 'transition_matrix' not in st.session_state:
-    st.session_state.transition_matrix = {
-        'A': {'A': 0.5, 'B': 0.5},
-        'B': {'A': 0.5, 'B': 0.5}
-    }
-
-# -----------------------------
-# App Interface
-# -----------------------------
-st.title("Live Predictor for Fairplay.live")
-
-# Replace this URL with your target URL
-url = "https://www.fairplay.live/dc/gamev1.1/teenpatti-one-day-MTUwMDA5-TUFDODgtWDFUUDEwMQ==-TUFDODg=-TWFjODggR2FtaW5n-TUFDSFVC"
-
-if st.button("Fetch Latest Result"):
-    latest = get_latest_result(url)
-    if latest in ['A', 'B']:
-        # Update only if the result is new
-        if not st.session_state.current_sequence or st.session_state.current_sequence[-1] != latest:
-            st.session_state.current_sequence.append(latest)
-            st.session_state.transition_matrix = update_transition_matrix(st.session_state.current_sequence)
-            st.success(f"New result: {latest} added!")
-        else:
-            st.info("Result unchanged from last fetch.")
+        st.error(f"Error reading CSV file: {e}")
     else:
-        st.warning("No valid result fetched.")
-
-st.write("### Current Sequence of Results")
-st.write(st.session_state.current_sequence)
-
-st.write("### Transition Matrix")
-st.write(st.session_state.transition_matrix)
-
-# -----------------------------
-# Make and Display a Prediction
-# -----------------------------
-if st.session_state.current_sequence:
-    last_state = st.session_state.current_sequence[-1]
-    probs = st.session_state.transition_matrix.get(last_state, {'A': 0.5, 'B': 0.5})
-    predicted_next = max(probs, key=probs.get)
-    st.write(f"**Based on the last result ({last_state}), the predicted next outcome is: {predicted_next}**")
-    st.write(f"Probability: {probs[predicted_next]:.2f}")
-else:
-    st.info("No results available yet for making a prediction.")
+        # Check if the CSV has the required 'result' column
+        if "result" not in df.columns:
+            st.error("The CSV file must contain a column named 'result'.")
+        else:
+            # Extract match sequence from the 'result' column
+            sequence = df["result"].tolist()
+            
+            # Filter to keep only valid outcomes
+            valid_sequence = [x for x in sequence if x in ['A', 'B']]
+            if not valid_sequence:
+                st.error("No valid match results ('A' or 'B') were found in the CSV file.")
+            else:
+                # Display the match sequence
+                st.write("### Match Sequence")
+                st.write(valid_sequence)
+                
+                # Compute the transition matrix based on the sequence
+                transition_matrix = update_transition_matrix(valid_sequence)
+                st.write("### Transition Matrix")
+                st.write(transition_matrix)
+                
+                # Make a prediction based on the last match outcome
+                last_state = valid_sequence[-1]
+                probs = transition_matrix.get(last_state, {'A': 0.5, 'B': 0.5})
+                predicted_next = max(probs, key=probs.get)
+                
+                st.write(f"**Based on the last result ({last_state}), the predicted next outcome is: {predicted_next}**")
+                st.write(f"Probability: {probs[predicted_next]:.2f}")
